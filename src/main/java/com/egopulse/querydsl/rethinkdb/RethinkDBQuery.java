@@ -7,7 +7,9 @@ import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.ParamExpression;
 import com.querydsl.core.types.Predicate;
 import com.rethinkdb.RethinkDB;
+import com.rethinkdb.gen.ast.ReqlExpr;
 import com.rethinkdb.gen.ast.Table;
+import com.rethinkdb.net.Connection;
 import com.rethinkdb.net.Cursor;
 
 import javax.annotation.Nonnegative;
@@ -19,13 +21,15 @@ import static com.egopulse.querydsl.rethinkdb.QueryDSL2RethinkDBConverter.reql;
 
 /**
  * TODO:
- *   - Add non-blocking query fashion right into here
- *   - DRY: extracts some repeated code to common base methods
+ * - Add non-blocking query fashion right into here
+ * - DRY: extracts some repeated code to common base methods
+ * - Use serializer directly instead of the static converter
  */
 public class RethinkDBQuery<T> implements SimpleQuery<RethinkDBQuery<T>>, Fetchable<T> {
 
     private static final RethinkDB r = RethinkDB.r;
     private ReturnableConnection borrowedConnection;
+    private RethinkDBSerializer serializer;
     private Table table;
 
     private QueryMixin<RethinkDBQuery<T>> queryMixin;
@@ -34,74 +38,78 @@ public class RethinkDBQuery<T> implements SimpleQuery<RethinkDBQuery<T>>, Fetcha
         this.queryMixin = new QueryMixin<>(this, new DefaultQueryMetadata(), false);
         this.borrowedConnection = borrowedConnection;
         this.table = RethinkDB.r.table(table);
+        this.serializer = new RethinkDBSerializer();
     }
 
     public static <T> RethinkDBQuery<T> query(String table, ReturnableConnection borrowedConnection) {
         return new RethinkDBQuery<>(table, borrowedConnection);
     }
 
-    @Override
     public List<T> fetch() {
-        Cursor result = table
-                .filter(reql(queryMixin.getMetadata().getWhere()))
-                .run(borrowedConnection.getConnection());
+        List<T> ret = (List<T>) realize(run(borrowedConnection.getConnection()));
         borrowedConnection.returnToPool();
-        return (List<T>) iterate(result);
+        return ret;
     }
 
-    @Override
     public T fetchFirst() {
-        Cursor result = table
-                .filter(reql(queryMixin.getMetadata().getWhere()))
-                .limit(1)
-                .run(borrowedConnection.getConnection());
+        T ret = (T) realizeFirst(run(borrowedConnection.getConnection()));
         borrowedConnection.returnToPool();
-        return (T) iterateFirst(result);
+        return ret;
     }
 
     @Override
     public T fetchOne() {
-        return null;
+        Cursor cursor = run(borrowedConnection.getConnection());
+        T result = (T) cursor.next();
+        if (cursor.hasNext()) {
+            throw new NonUniqueResultException();
+        }
+        borrowedConnection.returnToPool();
+        return result;
     }
 
     @Override
     public CloseableIterator<T> iterate() {
-        return null;
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public QueryResults<T> fetchResults() {
-        return null;
+        throw new UnsupportedOperationException();
     }
 
     @Override
     public long fetchCount() {
-        return 0;
+        long ret = generateReql().count().run(borrowedConnection.getConnection());
+        borrowedConnection.returnToPool();
+        return ret;
     }
 
     @Override
     public RethinkDBQuery<T> limit(@Nonnegative long limit) {
-        return null;
+        return queryMixin.limit(limit);
     }
 
     @Override
     public RethinkDBQuery<T> offset(@Nonnegative long offset) {
-        return null;
+        // !!! Unimplemented
+        return queryMixin.offset(offset);
     }
 
     @Override
     public RethinkDBQuery<T> restrict(QueryModifiers modifiers) {
-        return null;
+        // !!! Offset is unimplemented
+        return queryMixin.restrict(modifiers);
     }
 
     @Override
     public RethinkDBQuery<T> orderBy(OrderSpecifier<?>... o) {
-        return null;
+        return queryMixin.orderBy(o);
     }
 
     @Override
     public <Q> RethinkDBQuery<T> set(ParamExpression<Q> param, Q value) {
-        return null;
+        return queryMixin.set(param, value);
     }
 
     @Override
@@ -114,8 +122,36 @@ public class RethinkDBQuery<T> implements SimpleQuery<RethinkDBQuery<T>>, Fetcha
         return queryMixin.where(predicates);
     }
 
+    private ReqlExpr generateReql() {
+        ReqlExpr query = table;
+
+        query = query.filter(reql(queryMixin.getMetadata().getWhere()));
+
+        Long limit = queryMixin.getMetadata().getModifiers().getLimit();
+        if (limit != null) {
+            query = query.limit(limit);
+        }
+
+        Long offset = queryMixin.getMetadata().getModifiers().getOffset();
+        if (offset != null) {
+            // TODO:
+            throw new UnsupportedOperationException("Offset is unimplemented");
+        }
+
+        List<OrderSpecifier<?>> orderBys = queryMixin.getMetadata().getOrderBy();
+        if (orderBys != null) {
+            throw new UnsupportedOperationException("orderBy is unimplemented");
+        }
+
+        return query;
+    }
+
+    private Cursor run(Connection connection) {
+        return generateReql().run(connection);
+    }
+
     @SuppressWarnings("unchecked")
-    private static Map<String, ?> iterateFirst(Cursor<Object> cursor) {
+    private static Map<String, ?> realizeFirst(Cursor<Object> cursor) {
         if (!(cursor.hasNext())) {
             throw new AssertionError("Empty result set");
         }
@@ -123,7 +159,7 @@ public class RethinkDBQuery<T> implements SimpleQuery<RethinkDBQuery<T>>, Fetcha
     }
 
     @SuppressWarnings("unchecked")
-    private static List<Map<String, ?>> iterate(Cursor<Object> cursor) {
+    private static List<Map<String, ?>> realize(Cursor<Object> cursor) {
         List<Map<String, ?>> ret = new ArrayList<>();
         for (Object o : cursor) {
             ret.add((Map<String, ?>) o);
