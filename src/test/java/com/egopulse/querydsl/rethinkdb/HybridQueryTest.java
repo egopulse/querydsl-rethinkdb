@@ -1,14 +1,15 @@
 package com.egopulse.querydsl.rethinkdb;
 
 import com.egopulse.querydsl.rethinkdb.domain.QPerson;
+import com.egopulse.querydsl.rethinkdb.helper.DummyReturnableConnection;
 import com.querydsl.core.NonUniqueResultException;
-import com.querydsl.core.QueryModifiers;
 import com.rethinkdb.RethinkDB;
 import com.rethinkdb.gen.ast.Table;
 import com.rethinkdb.gen.exc.ReqlOpFailedError;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import rx.Single;
 
 import java.util.List;
 import java.util.Map;
@@ -16,11 +17,12 @@ import java.util.concurrent.TimeoutException;
 
 import static com.egopulse.querydsl.rethinkdb.TestUtils.withConnection;
 import static com.egopulse.querydsl.rethinkdb.TestUtils.withReturnableConnection;
-import static org.hamcrest.Matchers.hasEntry;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.*;
+import static org.hamcrest.collection.IsMapContaining.hasEntry;
+import static org.junit.Assert.assertThat;
 
-public class RethinkDBQueryTest {
+public class HybridQueryTest {
 
     private static final QPerson qPerson = QPerson.person;
 
@@ -50,19 +52,24 @@ public class RethinkDBQueryTest {
     public void testFetch() throws Exception {
         withConnection(conn -> {
             persons.insert(r.hashMap("name", "Duke")).run(conn);
-            RethinkDBQuery<Map<String, Object>> query =
-                    new RethinkDBQuery<>("persons", new ReturnableConnection(conn));
-            List<Map<String, Object>> resultPersons = query.where(qPerson.name.isNotEmpty()).fetch();
-            assertEquals(2, resultPersons.size());
+
+            HybridQuery<Map<String, Object>> query =
+                    new HybridQuery<>("persons", new DummyReturnableConnection(conn));
+            Single<List<Map<String, Object>>> resultPersons = query.where(qPerson.name.isNotEmpty()).fetch();
+
+            assertThat(
+                    resultPersons.toBlocking().value().size(),
+                    equalTo(2));
         });
     }
 
     @Test
     public void testFetchFirst() throws Exception {
         withConnection(conn -> {
-            RethinkDBQuery<Map<String, Object>> query =
-                    new RethinkDBQuery<>("persons", new ReturnableConnection(conn));
-            Map<String, Object> huy = query.where(qPerson.name.eq("HuyLe")).fetchFirst();
+            HybridQuery<Map<String, Object>> query =
+                    new HybridQuery<>("persons", new DummyReturnableConnection(conn));
+            Map<String, Object> huy = query.where(qPerson.name.eq("HuyLe")).fetchFirst().toBlocking().value();
+
             assertThat(huy, hasEntry("name", "HuyLe"));
         });
     }
@@ -70,9 +77,10 @@ public class RethinkDBQueryTest {
     @Test
     public void testFetchOne() throws Exception {
         withConnection(conn -> {
-            RethinkDBQuery<Map<String, Object>> query =
-                    new RethinkDBQuery<>("persons", new ReturnableConnection(conn));
-            Map<String, Object> huy = query.where(qPerson.name.eq("HuyLe")).fetchOne();
+            HybridQuery<Map<String, Object>> query =
+                    new HybridQuery<>("persons", new DummyReturnableConnection(conn));
+            Map<String, Object> huy = query.where(qPerson.name.eq("HuyLe")).fetchOne().toBlocking().value();
+
             assertThat(huy, hasEntry("name", "HuyLe"));
         });
     }
@@ -81,9 +89,9 @@ public class RethinkDBQueryTest {
     public void testFetchOne_should_throw() throws Exception {
         withConnection(conn -> {
             persons.insert(r.hashMap("name", "Duke")).run(conn);
-            RethinkDBQuery<Map<String, Object>> query =
-                    new RethinkDBQuery<>("persons", new ReturnableConnection(conn));
-            query.where(qPerson.name.isNotEmpty()).fetchOne();
+            HybridQuery<Map<String, Object>> query =
+                    new HybridQuery<>("persons", new DummyReturnableConnection(conn));
+            query.where(qPerson.name.isNotEmpty()).fetchOne().toBlocking().value();
         });
     }
 
@@ -91,9 +99,11 @@ public class RethinkDBQueryTest {
     public void testCount() throws Exception {
         withReturnableConnection(conn -> {
             assertThat(
-                    new RethinkDBQuery<>("persons", conn)
+                    new HybridQuery<>("persons", conn)
                             .where(qPerson.name.eq("HuyLe"))
-                            .fetchCount(),
+                            .fetchCount()
+                            .toBlocking()
+                            .value(),
                     is(1L));
         });
     }
@@ -102,12 +112,13 @@ public class RethinkDBQueryTest {
     public void testRestrict() throws Exception {
         withReturnableConnection(conn -> {
             assertThat(
-                    new RethinkDBQuery<>("persons", conn)
+                    new HybridQuery<>("persons", conn)
                             .where(qPerson.name.eq("HuyLe"))
-                            .fetchCount(),
+                            .fetchCount()
+                            .toBlocking()
+                            .value(),
                     is(1L));
         });
     }
-
 
 }

@@ -1,5 +1,6 @@
 package com.egopulse.querydsl.rethinkdb;
 
+import com.egopulse.querydsl.rethinkdb.helper.DummyReturnableConnection;
 import com.rethinkdb.RethinkDB;
 import com.rethinkdb.net.Connection;
 
@@ -14,9 +15,9 @@ public class TestUtils {
         connection.close();
     }
 
-    public static void withReturnableConnection(Consumer<ReturnableConnection> dbOperation) throws TimeoutException {
+    public static void withReturnableConnection(Consumer<DummyReturnableConnection> dbOperation) throws TimeoutException {
         Connection connection = RethinkDB.r.connection().connect();
-        dbOperation.accept(new ReturnableConnection(connection));
+        dbOperation.accept(new DummyReturnableConnection(connection));
         connection.close();
     }
 

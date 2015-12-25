@@ -1,22 +1,12 @@
 package com.egopulse.querydsl.rethinkdb;
 
 import com.rethinkdb.net.Connection;
+import rx.Single;
 
-public class ReturnableConnection {
-    private Connection connection;
+public interface ReturnableConnection {
 
-    // TODO: testing purpose only,
-    // the ReturnableConnection should hold a reference to a pool to return the connection later
-    public ReturnableConnection(Connection connection) {
-        this.connection = connection;
-    }
+    void handBack();
 
-    public void returnToPool() {
-        System.out.println("Supposed to be returned to the pool");
-    }
-
-    public Connection getConnection() {
-        return connection;
-    }
+    Single<Connection> getConnection();
 
 }

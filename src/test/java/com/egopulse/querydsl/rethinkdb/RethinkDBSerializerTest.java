@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
-import static com.egopulse.querydsl.rethinkdb.QueryDSL2RethinkDBConverter.reql;
+import static com.egopulse.querydsl.rethinkdb.Helper.reql;
 import static com.egopulse.querydsl.rethinkdb.TestUtils.withConnection;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertEquals;
