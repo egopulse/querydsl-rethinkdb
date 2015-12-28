@@ -3,10 +3,10 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>com.egopulse</groupId>
-  <artifactId>querydsl-rethinkdb</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
-  <name>Querydsl - RethinkDB support</name>
-  <description>RethinkDB support for Querydsl</description>
+  <artifactId>rx-querydsl-rethinkdb</artifactId>
+  <version>0.0.1</version>
+  <name>QueryDSL - RethinkDB support</name>
+  <description>RethinkDB support for QueryDSL</description>
   <packaging>jar</packaging>
 
   <properties>
@@ -27,7 +27,7 @@
       <groupId>com.querydsl</groupId>
       <artifactId>querydsl-apt</artifactId>
       <version>${querydsl.version}</version>
-      <scope>provided</scope>
+      <!--<scope>provided</scope>-->
     </dependency>
 
     <dependency>

@@ -16,7 +16,7 @@ public class DummyReturnableConnection implements ReturnableConnection {
 
     @Override
     public void handBack() {
-        System.out.println("Supposed to be returned to the pool");
+        // Do nothing
     }
 
     @Override
