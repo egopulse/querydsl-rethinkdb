@@ -10,13 +10,13 @@ import javax.annotation.processing.SupportedAnnotationTypes;
 import java.util.Collections;
 
 @SupportedAnnotationTypes({"com.querydsl.core.annotations.*"})
-public class RethinkDBAnnotationProcessors extends AbstractQuerydslProcessor {
+public class RethinkDBAnnotationProcessor extends AbstractQuerydslProcessor {
     @Override
     protected Configuration createConfiguration(RoundEnvironment roundEnvironment) {
         return new DefaultConfiguration(
                 roundEnvironment,
                 this.processingEnv.getOptions(),
-                Collections.emptySet(),
+                Collections.<String>emptySet(),
                 QueryEntities.class,
                 QueryEntity.class,
                 QuerySupertype.class,

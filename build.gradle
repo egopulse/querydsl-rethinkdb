@@ -1,0 +1,128 @@
+plugins {
+    id "java"
+    id "idea"
+    id "com.jfrog.bintray" version "1.4"
+}
+
+group = 'com.egopulse'
+version = '0.1.1'
+
+description = """QueryDSL - RethinkDB support"""
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+configurations {
+    provided
+}
+
+repositories {
+    maven { url "http://repo.maven.apache.org/maven2" }
+}
+
+sourceSets {
+    test {
+        java {
+            srcDirs += "$buildDir/generated/test"
+        }
+    }
+}
+
+dependencies {
+    compile group: 'com.querydsl', name: 'querydsl-core', version: '4.0.7'
+    compile group: 'com.querydsl', name: 'querydsl-apt', version: '4.0.7'
+    compile group: 'com.rethinkdb', name: 'rethinkdb-driver', version: '2.2-beta-1'
+    compile group: 'org.slf4j', name: 'slf4j-api', version: '1.6.1'
+    compile group: 'org.slf4j', name: 'slf4j-log4j12', version: '1.6.1'
+    compile group: 'co.paralleluniverse', name: 'quasar-core', version: '0.7.3', classifier: 'jdk8'
+    compile group: 'co.paralleluniverse', name: 'quasar-core', version: '0.7.3'
+    compile group: 'io.reactivex', name: 'rxjava', version: '1.1.0'
+
+    testCompile group: 'com.querydsl', name: 'querydsl-core', version: '4.0.7'
+    testCompile group: 'junit', name: 'junit', version: '4.11'
+    testCompile group: 'org.hamcrest', name: 'hamcrest-library', version: '1.3'
+    testCompile group: 'com.jayway.awaitility', name: 'awaitility', version: '1.7.0'
+
+    provided "org.apache.ant:ant:1.9.6"
+}
+
+task generateTestSchemaObjects(type: JavaCompile, group: 'build', description: 'Generates the QueryDSL query types') {
+    source = sourceSets.test.java
+    classpath = configurations.compile + sourceSets.main.output + configurations.testCompile
+    destinationDir = file("$buildDir/generated/test")
+    options.compilerArgs = [
+            "-proc:only",
+            "-processor", "com.egopulse.querydsl.rethinkdb.RethinkDBAnnotationProcessor"
+    ]
+}
+
+compileJava {
+    doLast {
+        scanAndInstrument(sourceSets.main, [configurations.provided, configurations.runtime])
+    }
+}
+
+compileTestJava {
+    dependsOn generateTestSchemaObjects
+}
+
+test {
+    classpath = project.sourceSets.test.runtimeClasspath + files("${projectDir}/build/generated/test")
+}
+
+//task(binTrayUpload, group: 'Publishing tasks', description: 'Publish all artifacts to Bintray') << {
+//    println 'Publish all artifacts to Bintray'
+//}
+
+task sourcesJar(type: Jar, dependsOn: classes) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+artifacts {
+    archives sourcesJar
+}
+
+def scanAndInstrument(sset, configs) {
+    def cp = '' + sset.output.classesDir + ':' + sset.output.resourcesDir + ':' + configs*.asPath.join(':')
+
+    ant.taskdef(
+            name: 'scanSuspendables', classname: 'co.paralleluniverse.fibers.instrument.SuspendablesScanner',
+            classpath: cp)
+    ant.scanSuspendables(
+            auto: false,
+            supersFile: "$sset.output.resourcesDir/META-INF/suspendable-supers",
+            append: true) {
+        fileset(dir: sset.output.classesDir)
+    }
+
+    ant.taskdef(name: 'instrumentation', classname: 'co.paralleluniverse.fibers.instrument.InstrumentationTask',
+            classpath: cp)
+    ant.instrumentation(verbose: 'true', check: 'true', debug: 'true') {
+        fileset(dir: sset.output.classesDir) {
+            exclude(name: 'co/paralleluniverse/fibers/instrument/*.class')
+        }
+    }
+}
+
+bintray {
+    user = project.hasProperty('bintrayUser') ? project.property('bintrayUser') : System.getenv('BINTRAY_USER')
+    key = project.hasProperty('bintrayApiKey') ? project.property('bintrayApiKey') : System.getenv('BINTRAY_API_KEY')
+    configurations = ['archives']
+    publish = true
+    pkg {
+        repo = 'maven'
+        name =  "${project.name}"
+        userOrg = 'egopulse'
+        licenses = ['Apache-2.0']
+        vcsUrl = 'https://github.com/egopulse/querydsl-rethinkdb.git'
+    }
+}
+
+idea {
+    module {
+        excludeDirs -= file("$buildDir")
+        sourceDirs += file("$buildDir/generated/test")
+    }
+}
+
