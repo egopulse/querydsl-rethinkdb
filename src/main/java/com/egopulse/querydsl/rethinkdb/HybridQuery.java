@@ -105,7 +105,6 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
 
     @Override
     public HybridQuery<T> offset(@Nonnegative long offset) {
-        // !!! Unimplemented
         return queryMixin.offset(offset);
     }
 
@@ -147,8 +146,7 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
 
         Long offset = queryMixin.getMetadata().getModifiers().getOffset();
         if (offset != null) {
-            // TODO:
-            throw new UnsupportedOperationException("Offset is unimplemented");
+            query.skip(offset);
         }
 
         List<OrderSpecifier<?>> orderBys = queryMixin.getMetadata().getOrderBy();
