@@ -15,13 +15,13 @@ import com.rethinkdb.gen.ast.Table;
 import com.rethinkdb.net.Connection;
 import com.rethinkdb.net.Cursor;
 import rx.Single;
+import rx.schedulers.Schedulers;
 
 import javax.annotation.Nonnegative;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static com.egopulse.querydsl.rethinkdb.FiberExecutor.execute;
 import static com.egopulse.querydsl.rethinkdb.Helper.reql;
 
 /**
@@ -32,7 +32,6 @@ import static com.egopulse.querydsl.rethinkdb.Helper.reql;
  */
 public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, AsyncFetchable<T> {
 
-    private static final RethinkDB r = RethinkDB.r;
     private ReturnableConnection borrowedConnection;
     private RethinkDBSerializer serializer;
     private Table table;
@@ -49,8 +48,9 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, AsyncFetchab
         this.serializer = new RethinkDBSerializer();
     }
 
-    private <Q> Single.Transformer<Q, Q> postFetch() {
+    private <Q> Single.Transformer<Q, Q> defaultTransformer() {
         return single -> single
+                .subscribeOn(Schedulers.io())
                 .doOnError(err -> borrowedConnection.handBack())
                 .doOnSuccess(__ -> borrowedConnection.handBack());
     }
@@ -59,47 +59,43 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, AsyncFetchab
     public Single<List<T>> fetch() {
         return borrowedConnection
                 .getConnection()
-                .flatMap(conn ->
-                        execute(() -> (List<T>) realize(run(conn))))
-                .compose(postFetch());
+                .map(conn -> (List<T>) realize(run(conn)))
+                .compose(defaultTransformer());
     }
 
     @Override
     public Single<T> fetchFirst() {
         return borrowedConnection
                 .getConnection()
-                .flatMap(conn ->
-                        execute(() -> (T) realizeFirst(run(conn))))
-                .compose(postFetch());
+                .map(conn -> (T) realizeFirst(run(conn)))
+                .compose(defaultTransformer());
     }
 
     @Override
     public Single<T> fetchOne() {
         return borrowedConnection
                 .getConnection()
-                .flatMap(conn ->
-                        execute(() -> {
-                            Cursor cursor = run(conn);
-                            T result = (T) cursor.next();
-                            if (cursor.hasNext()) {
-                                throw new NonUniqueResultException();
-                            }
-                            return result;
-                        }))
-                .compose(postFetch());
+                .map(conn -> {
+                    Cursor cursor = run(conn);
+                    T result = (T) cursor.next();
+                    if (cursor.hasNext()) {
+                        throw new NonUniqueResultException();
+                    }
+                    return result;
+                })
+                .compose(defaultTransformer());
     }
 
     @Override
     public Single<Long> fetchCount() {
         return borrowedConnection
                 .getConnection()
-                .flatMap(conn ->
-                        execute(() -> {
-                            long ret = generateReql().count().run(conn);
-                            borrowedConnection.handBack();
-                            return ret;
-                        }))
-                .compose(postFetch());
+                .map(conn -> {
+                    long ret = generateReql().count().run(conn);
+                    borrowedConnection.handBack();
+                    return ret;
+                })
+                .compose(defaultTransformer());
     }
 
     @Override
@@ -115,7 +111,7 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, AsyncFetchab
 
     @Override
     public HybridQuery<T> restrict(QueryModifiers modifiers) {
-        // !!! Offset is unimplemented
+        // !!! restrict include offset which is unimplemented
         return queryMixin.restrict(modifiers);
     }
 
