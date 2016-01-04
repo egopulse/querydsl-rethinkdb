@@ -4,7 +4,7 @@ import rx.Single;
 
 import java.util.List;
 
-public interface AsyncFetchable<T> {
+public interface RxFetchable<T> {
 
     Single<List<T>> fetch();
 

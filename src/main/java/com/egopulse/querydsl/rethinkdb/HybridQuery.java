@@ -30,7 +30,7 @@ import static com.egopulse.querydsl.rethinkdb.Helper.reql;
  * - DRY: extracts some repeated code to common base methods
  * - Use serializer directly instead of the static converter
  */
-public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, AsyncFetchable<T> {
+public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<T> {
 
     private ReturnableConnection borrowedConnection;
     private RethinkDBSerializer serializer;
