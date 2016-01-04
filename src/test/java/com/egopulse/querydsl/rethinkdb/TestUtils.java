@@ -9,16 +9,21 @@ import java.util.function.Consumer;
 
 public class TestUtils {
 
-    public static void withConnection(Consumer<Connection> dbOperation) throws TimeoutException {
-        Connection connection = RethinkDB.r.connection().connect();
-        dbOperation.accept(connection);
-        connection.close();
+    public static Connection sharedConnection;
+    static {
+        try {
+            sharedConnection = RethinkDB.r.connection().connect();
+        } catch (TimeoutException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    public static void withReturnableConnection(Consumer<DummyReturnableConnection> dbOperation) throws TimeoutException {
-        Connection connection = RethinkDB.r.connection().connect();
-        dbOperation.accept(new DummyReturnableConnection(connection));
-        connection.close();
+    public synchronized static void withConnection(Consumer<Connection> dbOperation) throws TimeoutException {
+        dbOperation.accept(sharedConnection);
+    }
+
+    public synchronized static void withReturnableConnection(Consumer<DummyReturnableConnection> dbOperation) throws TimeoutException {
+        dbOperation.accept(new DummyReturnableConnection(sharedConnection));
     }
 
 }
