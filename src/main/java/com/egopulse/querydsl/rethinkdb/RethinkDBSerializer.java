@@ -1,11 +1,18 @@
 package com.egopulse.querydsl.rethinkdb;
 
 import com.querydsl.core.types.*;
+import com.rethinkdb.RethinkDB;
+import com.rethinkdb.gen.ast.OrderBy;
 import com.rethinkdb.gen.ast.ReqlExpr;
+import com.rethinkdb.model.Arguments;
+
+import java.util.List;
 
 // TODO: why querydsl-mongodb implementation sometimes use `visit`, sometimes use `handle`, something expression#accept
 // when it needs to do recursion? For now I just blindly follow it
 public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
+
+    private static final RethinkDB r = RethinkDB.r;
 
     public Object handle(Expression<?> expression, ReqlExpr context) {
         return circle(expression, context);
@@ -24,6 +31,19 @@ public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
 
     private ReqlExpr circle(Expression<?> expr, ReqlExpr context) {
         return (ReqlExpr) expr.accept(this, context);
+    }
+
+    public ReqlExpr toSort(List<OrderSpecifier<?>> orderSpecs, ReqlExpr context) {
+        Arguments args = new Arguments(context);
+
+        for (OrderSpecifier orderSpec : orderSpecs) {
+            args.coerceAndAdd(
+                    orderSpec.isAscending()
+                            ? r.asc(((Path) orderSpec.getTarget()).getMetadata().getName())
+                            : r.desc(((Path) orderSpec.getTarget()).getMetadata().getName()));
+        }
+
+        return new OrderBy(args);
     }
 
     @Override

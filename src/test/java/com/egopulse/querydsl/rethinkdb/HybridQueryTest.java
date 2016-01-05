@@ -1,6 +1,7 @@
 package com.egopulse.querydsl.rethinkdb;
 
 import com.egopulse.querydsl.rethinkdb.domain.QPerson;
+import com.egopulse.querydsl.rethinkdb.domain2.QItem;
 import com.egopulse.querydsl.rethinkdb.helper.DummyReturnableConnection;
 import com.querydsl.core.NonUniqueResultException;
 import com.rethinkdb.RethinkDB;
@@ -17,14 +18,13 @@ import java.util.concurrent.TimeoutException;
 
 import static com.egopulse.querydsl.rethinkdb.TestUtils.withConnection;
 import static com.egopulse.querydsl.rethinkdb.TestUtils.withReturnableConnection;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.collection.IsMapContaining.hasEntry;
+import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
 
 public class HybridQueryTest {
 
     private static final QPerson qPerson = QPerson.person;
+    private static final QItem qItem = QItem.item;
 
     private static final RethinkDB r = RethinkDB.r;
     private static final Table persons = r.table("persons");
@@ -44,7 +44,7 @@ public class HybridQueryTest {
     @After
     public void tearDown() throws TimeoutException {
         withConnection(conn -> {
-            r.tableDrop("persons").run(conn);
+            persons.delete().run(conn);
         });
     }
 
@@ -119,6 +119,54 @@ public class HybridQueryTest {
                             .value(),
                     is(1L));
         });
+    }
+
+    @Test
+    public void testOrderBy() throws Exception {
+        withConnection(conn ->
+            persons.insert(r.hashMap("name", "HuyNguyen")).run(conn));
+
+        withReturnableConnection(conn ->
+            assertThat(
+                    new HybridQuery<Map<String, ?>>("persons", conn)
+                            .orderBy(qPerson.name.asc())
+                            .fetchFirst()
+                            .toBlocking()
+                            .value(),
+                    hasEntry("name", "HuyLe")));
+
+        withReturnableConnection(conn ->
+                assertThat(
+                        new HybridQuery<Map<String, ?>>("persons", conn)
+                                .orderBy(qPerson.name.desc())
+                                .fetchFirst()
+                                .toBlocking()
+                                .value(),
+                        hasEntry("name", "HuyNguyen")));
+    }
+
+    @Test
+    public void testOrderBy_nested() throws Exception {
+        withConnection(connection ->
+                r.tableDrop("items").run(connection));
+
+        withConnection(conn -> {
+            r.tableCreate("items").run(conn);
+            r.table("items").insert(r.hashMap("name", "a").with("col1", 1).with("col2", 3)).run(conn);
+            r.table("items").insert(r.hashMap("name", "b").with("col1", 2).with("col2", 2)).run(conn);
+            r.table("items").insert(r.hashMap("name", "c").with("col1", 2).with("col2", 1)).run(conn);
+        });
+
+        withReturnableConnection(conn -> {
+            assertThat(
+                    new HybridQuery<Map<String, ?>>("items", conn)
+                        .orderBy(qItem.col1.asc(), qItem.col2.asc())
+                        .fetch()
+                        .toBlocking()
+                        .value(),
+                    contains(hasEntry("name", "a"), hasEntry("name", "c"), hasEntry("name", "b")));
+        });
+
     }
 
 }

@@ -37,6 +37,10 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
     private Table table;
     private QueryMixin<HybridQuery<T>> queryMixin;
 
+    // Query is executed in parallel on shards,
+    // hence the returned after `run()` is fully realized data instead of a cursor
+    private boolean isParallelized = true;
+
     public HybridQuery(EntityPath<?> table, ReturnableConnection borrowedConnection) {
         this(table.getMetadata().getName() + "s", borrowedConnection);
     }
@@ -50,9 +54,10 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
 
     private <Q> Single.Transformer<Q, Q> defaultTransformer() {
         return single -> single
+                .toObservable()
                 .subscribeOn(Schedulers.io())
-                .doOnError(err -> borrowedConnection.handBack())
-                .doOnSuccess(__ -> borrowedConnection.handBack());
+                .finallyDo(() -> borrowedConnection.handBack())
+                .toSingle();
     }
 
     @Override
@@ -67,7 +72,7 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
     public Single<T> fetchFirst() {
         return borrowedConnection
                 .getConnection()
-                .map(conn -> (T) realizeFirst(run(conn)))
+                .map(conn -> (T) realizeAtom(run(conn), false))
                 .compose(defaultTransformer());
     }
 
@@ -75,14 +80,7 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
     public Single<T> fetchOne() {
         return borrowedConnection
                 .getConnection()
-                .map(conn -> {
-                    Cursor cursor = run(conn);
-                    T result = (T) cursor.next();
-                    if (cursor.hasNext()) {
-                        throw new NonUniqueResultException();
-                    }
-                    return result;
-                })
+                .map(conn -> (T) realizeAtom(run(conn), true))
                 .compose(defaultTransformer());
     }
 
@@ -116,6 +114,7 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
 
     @Override
     public HybridQuery<T> orderBy(OrderSpecifier<?>... o) {
+        isParallelized = false;
         return queryMixin.orderBy(o);
     }
 
@@ -137,7 +136,10 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
     private ReqlExpr generateReql() {
         ReqlExpr query = table;
 
-        query = query.filter(reql(queryMixin.getMetadata().getWhere()));
+        Predicate whereClause = queryMixin.getMetadata().getWhere();
+        if (whereClause != null) {
+            query = query.filter(reql(queryMixin.getMetadata().getWhere()));
+        }
 
         Long limit = queryMixin.getMetadata().getModifiers().getLimit();
         if (limit != null) {
@@ -146,36 +148,51 @@ public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<
 
         Long offset = queryMixin.getMetadata().getModifiers().getOffset();
         if (offset != null) {
-            query.skip(offset);
+            query = query.skip(offset);
         }
 
         List<OrderSpecifier<?>> orderBys = queryMixin.getMetadata().getOrderBy();
         if (!orderBys.isEmpty()) {
-            throw new UnsupportedOperationException("orderBy is unimplemented");
+            query = serializer.toSort(orderBys, query);
         }
 
         return query;
     }
 
-    private Cursor run(Connection connection) {
+    private Object run(Connection connection) {
         return generateReql().run(connection);
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, ?> realizeFirst(Cursor<Object> cursor) {
-        if (!(cursor.hasNext())) {
-            throw new AssertionError("Empty result set");
+    private Map<String, ?> realizeAtom(Object queryResult, boolean ensureAtomValue) {
+        if (isParallelized) {
+            Cursor cursor = (Cursor) queryResult;
+            if (!(cursor.hasNext())) {
+                throw new AssertionError("Empty result set");
+            }
+            Map<String, ?> ret = (Map<String, ?>) cursor.next();
+            if (ensureAtomValue && cursor.hasNext()) {
+                throw new NonUniqueResultException();
+            }
+            return ret;
+        } else {
+            return ((List<Map<String, ?>>) queryResult).get(0);
         }
-        return (Map<String, ?>) cursor.next();
+
     }
 
     @SuppressWarnings("unchecked")
-    private static List<Map<String, ?>> realize(Cursor<Object> cursor) {
-        List<Map<String, ?>> ret = new ArrayList<>();
-        for (Object o : cursor) {
-            ret.add((Map<String, ?>) o);
+    private List<Map<String, ?>> realize(Object queryResult) {
+        if (isParallelized) {
+            Cursor cursor = (Cursor) queryResult;
+            List<Map<String, ?>> ret = new ArrayList<>();
+            for (Object o : cursor) {
+                ret.add((Map<String, ?>) o);
+            }
+            return ret;
+        } else {
+            return (List<Map<String, ?>>) queryResult;
         }
-        return ret;
     }
 
 }
