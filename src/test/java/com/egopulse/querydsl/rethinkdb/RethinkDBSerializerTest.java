@@ -7,18 +7,17 @@ import com.rethinkdb.gen.ast.ReqlExpr;
 import com.rethinkdb.gen.ast.Table;
 import com.rethinkdb.gen.exc.ReqlOpFailedError;
 import com.rethinkdb.model.OptArgs;
-import com.rethinkdb.net.Cursor;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.UnsupportedEncodingException;
-import java.util.*;
+import java.util.Collections;
 import java.util.concurrent.TimeoutException;
 
-import static com.egopulse.querydsl.rethinkdb.Helper.reql;
-import static com.egopulse.querydsl.rethinkdb.TestUtils.withConnection;
+import static com.egopulse.querydsl.rethinkdb.ReqlSerializingHelper.reql;
+import static com.egopulse.querydsl.rethinkdb.TestUtils.*;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
@@ -417,23 +416,6 @@ public class RethinkDBSerializerTest {
                             .run(conn)),
                     empty());
         });
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, ?> fetchFirst(Cursor<Object> cursor) {
-        if (!(cursor.hasNext())) {
-            throw new AssertionError("Empty result set");
-        }
-        return (Map<String, ?>) cursor.next();
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Collection<Map<String, ?>> fetch(Cursor<Object> cursor) {
-        List<Map<String, ?>> ret = new ArrayList<>();
-        for (Object o : cursor) {
-            ret.add((Map<String, ?>) o);
-        }
-        return ret;
     }
 
     private String toJsonString(ReqlExpr expr) throws UnsupportedEncodingException {

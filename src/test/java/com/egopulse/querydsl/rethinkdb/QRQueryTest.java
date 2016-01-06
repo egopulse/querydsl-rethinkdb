@@ -21,7 +21,7 @@ import static com.egopulse.querydsl.rethinkdb.TestUtils.withReturnableConnection
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
 
-public class HybridQueryTest {
+public class QRQueryTest {
 
     private static final QPerson qPerson = QPerson.person;
     private static final QItem qItem = QItem.item;
@@ -53,8 +53,8 @@ public class HybridQueryTest {
         withConnection(conn -> {
             persons.insert(r.hashMap("name", "Duke")).run(conn);
 
-            HybridQuery<Map<String, Object>> query =
-                    new HybridQuery<>("persons", new DummyReturnableConnection(conn));
+            QRQuery<Map<String, Object>> query =
+                    new QRQuery<>("persons", new DummyReturnableConnection(conn));
             Single<List<Map<String, Object>>> resultPersons = query.where(qPerson.name.isNotEmpty()).fetch();
 
             assertThat(
@@ -66,8 +66,8 @@ public class HybridQueryTest {
     @Test
     public void testFetchFirst() throws Exception {
         withConnection(conn -> {
-            HybridQuery<Map<String, Object>> query =
-                    new HybridQuery<>("persons", new DummyReturnableConnection(conn));
+            QRQuery<Map<String, Object>> query =
+                    new QRQuery<>("persons", new DummyReturnableConnection(conn));
             Map<String, Object> huy = query.where(qPerson.name.eq("HuyLe")).fetchFirst().toBlocking().value();
 
             assertThat(huy, hasEntry("name", "HuyLe"));
@@ -77,8 +77,8 @@ public class HybridQueryTest {
     @Test
     public void testFetchOne() throws Exception {
         withConnection(conn -> {
-            HybridQuery<Map<String, Object>> query =
-                    new HybridQuery<>("persons", new DummyReturnableConnection(conn));
+            QRQuery<Map<String, Object>> query =
+                    new QRQuery<>("persons", new DummyReturnableConnection(conn));
             Map<String, Object> huy = query.where(qPerson.name.eq("HuyLe")).fetchOne().toBlocking().value();
 
             assertThat(huy, hasEntry("name", "HuyLe"));
@@ -89,8 +89,8 @@ public class HybridQueryTest {
     public void testFetchOne_should_throw() throws Exception {
         withConnection(conn -> {
             persons.insert(r.hashMap("name", "Duke")).run(conn);
-            HybridQuery<Map<String, Object>> query =
-                    new HybridQuery<>("persons", new DummyReturnableConnection(conn));
+            QRQuery<Map<String, Object>> query =
+                    new QRQuery<>("persons", new DummyReturnableConnection(conn));
             query.where(qPerson.name.isNotEmpty()).fetchOne().toBlocking().value();
         });
     }
@@ -99,7 +99,7 @@ public class HybridQueryTest {
     public void testCount() throws Exception {
         withReturnableConnection(conn -> {
             assertThat(
-                    new HybridQuery<>("persons", conn)
+                    new QRQuery<>("persons", conn)
                             .where(qPerson.name.eq("HuyLe"))
                             .fetchCount()
                             .toBlocking()
@@ -112,7 +112,7 @@ public class HybridQueryTest {
     public void testRestrict() throws Exception {
         withReturnableConnection(conn -> {
             assertThat(
-                    new HybridQuery<>("persons", conn)
+                    new QRQuery<>("persons", conn)
                             .where(qPerson.name.eq("HuyLe"))
                             .fetchCount()
                             .toBlocking()
@@ -124,20 +124,20 @@ public class HybridQueryTest {
     @Test
     public void testOrderBy() throws Exception {
         withConnection(conn ->
-            persons.insert(r.hashMap("name", "HuyNguyen")).run(conn));
-
-        withReturnableConnection(conn ->
-            assertThat(
-                    new HybridQuery<Map<String, ?>>("persons", conn)
-                            .orderBy(qPerson.name.asc())
-                            .fetchFirst()
-                            .toBlocking()
-                            .value(),
-                    hasEntry("name", "HuyLe")));
+                persons.insert(r.hashMap("name", "HuyNguyen")).run(conn));
 
         withReturnableConnection(conn ->
                 assertThat(
-                        new HybridQuery<Map<String, ?>>("persons", conn)
+                        new QRQuery<Map<String, ?>>("persons", conn)
+                                .orderBy(qPerson.name.asc())
+                                .fetchFirst()
+                                .toBlocking()
+                                .value(),
+                        hasEntry("name", "HuyLe")));
+
+        withReturnableConnection(conn ->
+                assertThat(
+                        new QRQuery<Map<String, ?>>("persons", conn)
                                 .orderBy(qPerson.name.desc())
                                 .fetchFirst()
                                 .toBlocking()
@@ -147,10 +147,11 @@ public class HybridQueryTest {
 
     @Test
     public void testOrderBy_nested() throws Exception {
-        withConnection(connection ->
-                r.tableDrop("items").run(connection));
-
         withConnection(conn -> {
+            try {
+                r.tableDrop("items").run(conn);
+            } catch (ReqlOpFailedError e) { } // Assume this exception caused by the table `items` already exists
+
             r.tableCreate("items").run(conn);
             r.table("items").insert(r.hashMap("name", "a").with("col1", 1).with("col2", 3)).run(conn);
             r.table("items").insert(r.hashMap("name", "b").with("col1", 2).with("col2", 2)).run(conn);
@@ -159,14 +160,23 @@ public class HybridQueryTest {
 
         withReturnableConnection(conn -> {
             assertThat(
-                    new HybridQuery<Map<String, ?>>("items", conn)
-                        .orderBy(qItem.col1.asc(), qItem.col2.asc())
-                        .fetch()
-                        .toBlocking()
-                        .value(),
+                    new QRQuery<Map<String, ?>>("items", conn)
+                            .orderBy(qItem.col1.asc(), qItem.col2.asc())
+                            .fetch()
+                            .toBlocking()
+                            .value(),
                     contains(hasEntry("name", "a"), hasEntry("name", "c"), hasEntry("name", "b")));
         });
-
     }
+
+//    @Test
+//    public void testSet() throws Exception {
+//        withReturnableConnection(conn ->
+//                new QRQuery<Map<String, ?>>("persons", conn)
+//                        .where(qPerson.name.eq("HuyLe"))
+//                        .set(qPerson.name, "HuyDepTraiHaoHoaPhongNha")
+//                        .fet
+//        );
+//    }
 
 }

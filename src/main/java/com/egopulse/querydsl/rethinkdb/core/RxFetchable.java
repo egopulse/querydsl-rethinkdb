@@ -1,4 +1,4 @@
-package com.egopulse.querydsl.rethinkdb;
+package com.egopulse.querydsl.rethinkdb.core;
 
 import rx.Single;
 
