@@ -24,11 +24,8 @@ import java.util.Map;
 
 import static com.egopulse.querydsl.rethinkdb.Helper.reql;
 
-/**
- * TODO:
- * - Add non-blocking query fashion right into here
- * - DRY: extracts some repeated code to common base methods
- * - Use serializer directly instead of the static converter
+/*
+ * TODO: type-safety
  */
 public class HybridQuery<T> implements SimpleQuery<HybridQuery<T>>, RxFetchable<T> {
 

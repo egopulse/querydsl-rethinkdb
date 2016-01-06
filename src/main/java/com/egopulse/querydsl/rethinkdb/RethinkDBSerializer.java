@@ -7,9 +7,15 @@ import com.rethinkdb.gen.ast.ReqlExpr;
 import com.rethinkdb.model.Arguments;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
-// TODO: why querydsl-mongodb implementation sometimes use `visit`, sometimes use `handle`, something expression#accept
-// when it needs to do recursion? For now I just blindly follow it
+/**
+ * Naive rough implementation of the serializer from QueryDSL expression to ReQL expression
+ * TODO: doc differents with orderinary QueryDSL
+ * TODO: why querydsl-mongodb implementation sometimes use `visit`, sometimes use `handle`, something expression#accept
+ * TODO: lazily fetching cursor
+ * when it needs to do recursion? For now I just blindly follow it
+ */
 public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
 
     private static final RethinkDB r = RethinkDB.r;
@@ -22,10 +28,13 @@ public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
     public Object visit(Constant<?> expr, ReqlExpr context) {
         if (Enum.class.isAssignableFrom(expr.getType())) {
             @SuppressWarnings("unchecked") //Guarded by previous check
-                    Constant<? extends Enum<?>> expectedExpr = (Constant<? extends Enum<?>>) expr;
+            Constant<? extends Enum<?>> expectedExpr = (Constant<? extends Enum<?>>) expr;
             return expectedExpr.getConstant().name();
+//        } else if (Number.class.isAssignableFrom(expr.getType())) {
+//            Constant<? extends Number> expectedExpr = (Constant<? extends Number>) expr;
+//            return Long.parseLong(expectedExpr.getConstant().toString());
         } else {
-            return expr.getConstant();
+            return r.expr(expr.getConstant());
         }
     }
 
@@ -94,6 +103,59 @@ public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
             Path<?> path = (Path<?>) expr.getArg(0);
             Constant<?> constant = (Constant<?>) expr.getArg(1);
             return circle(path, context).ne(constant);
+        } else if (op == Ops.STARTS_WITH) {
+            return circle(expr.getArg(0), context).match("^" + expr.getArg(1));
+        } else if (op == Ops.STARTS_WITH_IC) {
+            return circle(expr.getArg(0), context).match("(?i)^" + expr.getArg(1));
+        } else if (op == Ops.ENDS_WITH) {
+            return circle(expr.getArg(0), context).match(expr.getArg(1) + "$");
+        } else if (op == Ops.ENDS_WITH_IC) {
+            return circle(expr.getArg(0), context).match("(?i)" + expr.getArg(1) + "$");
+        } else if (op == Ops.EQ_IGNORE_CASE) {
+            return circle(expr.getArg(0), context).match("(?i)" + "^" + expr.getArg(1) + "$");
+        } else if (op == Ops.STRING_CONTAINS) {
+            return circle(expr.getArg(0), context).match(".*" + expr.getArg(1) + ".*");
+        } else if (op == Ops.STRING_CONTAINS_IC) {
+            return circle(expr.getArg(0), context).match("(?).*" + expr.getArg(1) + ".*");
+        } else if (op == Ops.MATCHES) {
+            return circle(expr.getArg(0), context).match(expr.getArg(1).toString());
+        } else if (op == Ops.MATCHES_IC) {
+            return circle(expr.getArg(0), context).match("(?).*" + expr.getArg(1).toString());
+        } else if (op == Ops.LIKE) {
+            String regex = ExpressionUtils.likeToRegex((Expression) expr.getArg(1)).toString();
+            return circle(expr.getArg(0), context).match(regex);
+        } else if (op == Ops.BETWEEN) {
+            return circle(expr.getArg(0), context)
+                    .gt(expr.getArg(1).accept(this, context))
+                    .and()
+                    .lt(expr.getArg(2).accept(this, context));
+        } else if (op == Ops.IN) {
+            return circle(expr.getArg(1), context).contains(circle(expr.getArg(0), context));
+        } else if (op == Ops.NOT_IN) {
+            return circle(expr.getArg(1), context).contains(circle(expr.getArg(0), context)).not();
+        } else if (op == Ops.COL_IS_EMPTY) {
+            return circle(expr.getArg(0), context).isEmpty();
+        } else if (op == Ops.LT) {
+            return circle(expr.getArg(0), context).lt(circle(expr.getArg(1), context));
+        } else if (op == Ops.GT) {
+            return circle(expr.getArg(0), context).gt(circle(expr.getArg(1), context));
+        } else if (op == Ops.LOE) {
+            return circle(expr.getArg(0), context)
+                    .lt(circle(expr.getArg(1), context))
+                    .or(circle(expr.getArg(0), context).eq(circle(expr.getArg(1), context)));
+        } else if (op == Ops.GOE) {
+            return circle(expr.getArg(0), context)
+                    .gt(circle(expr.getArg(1), context))
+                    .or(circle(expr.getArg(0), context).eq(circle(expr.getArg(1), context)));
+        } else if (op == Ops.IS_NULL) {
+            return context.hasFields(leafName((Path<?>) expr.getArg(0))).not();
+        } else if (op == Ops.IS_NOT_NULL) {
+            return context.hasFields(leafName((Path<?>) expr.getArg(0)));
+        // !!! Can't found the corresponding methods on the generated classes
+        } else if (op == Ops.CONTAINS_KEY) {
+            Path<?> path = (Path<?>) expr.getArg(0);
+            Expression<?> key = expr.getArg(1);
+            return circle(path, context).hasFields(circle(key, context));
         } else {
             throw new UnsupportedOperationException();
         }
@@ -132,5 +194,12 @@ public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
         throw new UnsupportedOperationException();
     }
 
+    private String regexValue(Expression<?> expr, ReqlExpr context) {
+        return Pattern.quote(expr.accept(this, context).toString());
+    }
+
+    private String leafName(Path<?> path) {
+        return path.getMetadata().getName();
+    }
 
 }
