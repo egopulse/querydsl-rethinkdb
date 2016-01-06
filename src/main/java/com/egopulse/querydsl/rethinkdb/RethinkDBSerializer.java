@@ -11,10 +11,12 @@ import java.util.regex.Pattern;
 
 /**
  * Naive rough implementation of the serializer from QueryDSL expression to ReQL expression
- * TODO: doc differents with orderinary QueryDSL
- * TODO: why querydsl-mongodb implementation sometimes use `visit`, sometimes use `handle`, something expression#accept
- * TODO: lazily fetching cursor
- * when it needs to do recursion? For now I just blindly follow it
+ *
+ * TODO:
+ *  - document what is different from ordinary QueryDSL
+ *  - why querydsl-mongodb implementation sometimes use `visit`, sometimes use `handle`, something expression#accept
+ *    when it needs to do recursion? For now I just blindly follow it
+ *  - lazily fetching cursor
  */
 public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
 
@@ -28,11 +30,8 @@ public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
     public Object visit(Constant<?> expr, ReqlExpr context) {
         if (Enum.class.isAssignableFrom(expr.getType())) {
             @SuppressWarnings("unchecked") //Guarded by previous check
-            Constant<? extends Enum<?>> expectedExpr = (Constant<? extends Enum<?>>) expr;
+                    Constant<? extends Enum<?>> expectedExpr = (Constant<? extends Enum<?>>) expr;
             return expectedExpr.getConstant().name();
-//        } else if (Number.class.isAssignableFrom(expr.getType())) {
-//            Constant<? extends Number> expectedExpr = (Constant<? extends Number>) expr;
-//            return Long.parseLong(expectedExpr.getConstant().toString());
         } else {
             return r.expr(expr.getConstant());
         }
@@ -96,66 +95,100 @@ public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
             } else {
                 return circle(expr.getArg(0), context).not();
             }
+
         } else if (op == Ops.OR) {
             return circle(expr.getArg(0), context)
                     .or(circle(expr.getArg(1), context));
+
         } else if (op == Ops.NE) {
             Path<?> path = (Path<?>) expr.getArg(0);
             Constant<?> constant = (Constant<?>) expr.getArg(1);
             return circle(path, context).ne(constant);
+
         } else if (op == Ops.STARTS_WITH) {
-            return circle(expr.getArg(0), context).match("^" + expr.getArg(1));
+            return circle(expr.getArg(0), context).match("^" + regexQuote(expr.getArg(1)));
+
         } else if (op == Ops.STARTS_WITH_IC) {
-            return circle(expr.getArg(0), context).match("(?i)^" + expr.getArg(1));
+            return circle(expr.getArg(0), context).match("(?i)^" + regexQuote(expr.getArg(1)));
+
         } else if (op == Ops.ENDS_WITH) {
-            return circle(expr.getArg(0), context).match(expr.getArg(1) + "$");
+            return circle(expr.getArg(0), context).match(regexQuote(expr.getArg(1)) + "$");
+
         } else if (op == Ops.ENDS_WITH_IC) {
-            return circle(expr.getArg(0), context).match("(?i)" + expr.getArg(1) + "$");
+            return circle(expr.getArg(0), context).match("(?i)" + regexQuote(expr.getArg(1)) + "$");
+
         } else if (op == Ops.EQ_IGNORE_CASE) {
-            return circle(expr.getArg(0), context).match("(?i)" + "^" + expr.getArg(1) + "$");
+            return circle(expr.getArg(0), context).match("(?i)" + "^" + regexQuote(expr.getArg(1)) + "$");
+
         } else if (op == Ops.STRING_CONTAINS) {
-            return circle(expr.getArg(0), context).match(".*" + expr.getArg(1) + ".*");
+            return circle(expr.getArg(0), context).match(".*" + regexQuote(expr.getArg(1)) + ".*");
+
         } else if (op == Ops.STRING_CONTAINS_IC) {
-            return circle(expr.getArg(0), context).match("(?).*" + expr.getArg(1) + ".*");
+            return circle(expr.getArg(0), context).match("(?).*" + regexQuote(expr.getArg(1)) + ".*");
+
         } else if (op == Ops.MATCHES) {
             return circle(expr.getArg(0), context).match(expr.getArg(1).toString());
+
         } else if (op == Ops.MATCHES_IC) {
-            return circle(expr.getArg(0), context).match("(?).*" + expr.getArg(1).toString());
+            return circle(expr.getArg(0), context).match("(?)" + expr.getArg(1).toString());
+
         } else if (op == Ops.LIKE) {
             String regex = ExpressionUtils.likeToRegex((Expression) expr.getArg(1)).toString();
             return circle(expr.getArg(0), context).match(regex);
+
         } else if (op == Ops.BETWEEN) {
-            return circle(expr.getArg(0), context)
-                    .gt(expr.getArg(1).accept(this, context))
-                    .and()
-                    .lt(expr.getArg(2).accept(this, context));
+            ReqlExpr middle = circle(expr.getArg(0), context);
+            ReqlExpr lowerBound = circle(expr.getArg(1), context);
+            ReqlExpr upperBound = circle(expr.getArg(2), context);
+            return middle
+                    .gt(lowerBound)
+                    .and(middle.lt(upperBound));
+
         } else if (op == Ops.IN) {
             return circle(expr.getArg(1), context).contains(circle(expr.getArg(0), context));
+
         } else if (op == Ops.NOT_IN) {
             return circle(expr.getArg(1), context).contains(circle(expr.getArg(0), context)).not();
+
         } else if (op == Ops.COL_IS_EMPTY) {
             return circle(expr.getArg(0), context).isEmpty();
+
         } else if (op == Ops.LT) {
             return circle(expr.getArg(0), context).lt(circle(expr.getArg(1), context));
+
         } else if (op == Ops.GT) {
             return circle(expr.getArg(0), context).gt(circle(expr.getArg(1), context));
+
         } else if (op == Ops.LOE) {
             return circle(expr.getArg(0), context)
                     .lt(circle(expr.getArg(1), context))
                     .or(circle(expr.getArg(0), context).eq(circle(expr.getArg(1), context)));
+
         } else if (op == Ops.GOE) {
             return circle(expr.getArg(0), context)
                     .gt(circle(expr.getArg(1), context))
                     .or(circle(expr.getArg(0), context).eq(circle(expr.getArg(1), context)));
+
+            // ??? The chunk below doesn't work
+            // Supplier<ReqlExpr> leftOperand = () -> circle(expr.getArg(0), context);
+            // Supplier<ReqlExpr> rightOperand = () -> circle(expr.getArg(1), context);
+            // return leftOperand.get()
+            //         .gt(rightOperand.get(), context)
+            //         .or(leftOperand.get(), context).eq(rightOperand.get(), context);
+
         } else if (op == Ops.IS_NULL) {
             return context.hasFields(leafName((Path<?>) expr.getArg(0))).not();
+
         } else if (op == Ops.IS_NOT_NULL) {
+
             return context.hasFields(leafName((Path<?>) expr.getArg(0)));
-        // !!! Can't found the corresponding methods on the generated classes
+            // !!! Can't found the corresponding methods on the generated classes
+
         } else if (op == Ops.CONTAINS_KEY) {
             Path<?> path = (Path<?>) expr.getArg(0);
             Expression<?> key = expr.getArg(1);
             return circle(path, context).hasFields(circle(key, context));
+
         } else {
             throw new UnsupportedOperationException();
         }
@@ -194,8 +227,8 @@ public class RethinkDBSerializer implements Visitor<Object, ReqlExpr> {
         throw new UnsupportedOperationException();
     }
 
-    private String regexValue(Expression<?> expr, ReqlExpr context) {
-        return Pattern.quote(expr.accept(this, context).toString());
+    private String regexQuote(Expression<?> expr) {
+        return Pattern.quote(expr.toString());
     }
 
     private String leafName(Path<?> path) {
