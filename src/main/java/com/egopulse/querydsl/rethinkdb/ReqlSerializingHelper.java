@@ -10,7 +10,7 @@ import com.rethinkdb.gen.ast.Table;
 
 import java.util.List;
 
-class ReqlSerializingHelper {
+public class ReqlSerializingHelper {
 
     private static RethinkDBSerializer serializer = new RethinkDBSerializer();
 

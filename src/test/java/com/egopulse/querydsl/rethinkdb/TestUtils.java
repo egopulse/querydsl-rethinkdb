@@ -1,6 +1,5 @@
 package com.egopulse.querydsl.rethinkdb;
 
-import com.egopulse.querydsl.rethinkdb.helper.DummyReturnableConnection;
 import com.rethinkdb.RethinkDB;
 import com.rethinkdb.net.Connection;
 import com.rethinkdb.net.Cursor;
@@ -25,10 +24,6 @@ public class TestUtils {
 
     public synchronized static void withConnection(Consumer<Connection> dbOperation) throws TimeoutException {
         dbOperation.accept(sharedConnection);
-    }
-
-    public synchronized static void withReturnableConnection(Consumer<DummyReturnableConnection> dbOperation) throws TimeoutException {
-        dbOperation.accept(new DummyReturnableConnection(sharedConnection));
     }
 
     @SuppressWarnings("unchecked")
